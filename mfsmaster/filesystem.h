@@ -21,10 +21,11 @@
 
 #include <inttypes.h>
 
+uint64_t fs_getversion(void);
+
 #ifdef METARESTORE
 
 
-uint64_t fs_getversion(void);
 
 uint8_t fs_access(uint32_t ts,uint32_t inode);
 uint8_t fs_append(uint32_t ts,uint32_t inode,uint32_t inode_src);
@@ -66,6 +67,10 @@ void fs_dump(void);
 void fs_term(const char *fname);
 int fs_init(const char *fname,int ignoreflag);
 
+uint8_t fs_log_archive(uint32_t ts,uint32_t inode);
+uint8_t fs_log_restore(uint32_t ts,uint32_t inode,uint64_t version,uint32_t inode_dst,uint16_t name_len,uint8_t *name_dst);
+uint8_t fs_log_unarchive(uint32_t ts,uint32_t inode,uint64_t version);
+
 #else
 
 // attr blob: [ type:8 goal:8 mode:16 uid:32 gid:32 atime:32 mtime:32 ctime:32 length:64 ]
@@ -98,6 +103,9 @@ uint8_t fs_rmdir(uint32_t rootinode,uint8_t sesflags,uint32_t parent,uint16_t nl
 uint8_t fs_rename(uint32_t rootinode,uint8_t sesflags,uint32_t parent_src,uint16_t nleng_src,const uint8_t *name_src,uint32_t parent_dst,uint16_t nleng_dst,const uint8_t *name_dst,uint32_t uid,uint32_t gid,uint32_t auid,uint32_t agid,uint32_t *inode,uint8_t attr[35]);
 uint8_t fs_link(uint32_t rootinode,uint8_t sesflags,uint32_t inode_src,uint32_t parent_dst,uint16_t nleng_dst,const uint8_t *name_dst,uint32_t uid,uint32_t gid,uint32_t auid,uint32_t agid,uint32_t *inode,uint8_t attr[35]);
 uint8_t fs_snapshot(uint32_t rootinode,uint8_t sesflags,uint32_t inode_src,uint32_t parent_dst,uint16_t nleng_dst,const uint8_t *name_dst,uint32_t uid,uint32_t gid,uint8_t canoverwrite);
+uint8_t fs_archive(uint32_t rootinode,uint8_t sesflags,uint32_t inode,uint32_t uid,uint32_t gid,uint64_t *snapshot_version);
+uint8_t fs_restore(uint32_t rootinode,uint8_t sesflags,uint32_t inode,uint64_t version,uint32_t parent_dst,uint16_t nleng_dst,const uint8_t *name_dst,uint32_t uid,uint32_t gid);
+uint8_t fs_unarchive(uint32_t rootinode,uint8_t sesflags,uint32_t inode,uint64_t version,uint32_t uid,uint32_t gid);
 uint8_t fs_append(uint32_t rootinode,uint8_t sesflags,uint32_t inode,uint32_t inode_src,uint32_t uid,uint32_t gid);
 
 uint8_t fs_readdir_size(uint32_t rootinode,uint8_t sesflags,uint32_t inode,uint32_t uid,uint32_t gid,uint8_t flags,void **dnode,uint32_t *dbuffsize);

@@ -2393,7 +2393,7 @@ void matoclserv_fuse_read_chunk(matoclserventry *eptr,const uint8_t *data,uint32
 	uint8_t *ptr;
 	uint8_t status;
 	uint32_t inode;
-	uint32_t indx;
+	uint32_t idx;
 	uint64_t chunkid;
 	uint64_t fleng;
 	uint32_t version;
@@ -2409,11 +2409,11 @@ void matoclserv_fuse_read_chunk(matoclserventry *eptr,const uint8_t *data,uint32
 	}
 	msgid = get32bit(&data);
 	inode = get32bit(&data);
-	indx = get32bit(&data);
+	idx = get32bit(&data);
 //	if (matoclserv_open_check(eptr,inode)<0) {
 //		status = ERROR_NOTOPENED;
 //	} else {
-		status = fs_readchunk(inode,indx,&chunkid,&fleng);
+		status = fs_readchunk(inode,idx,&chunkid,&fleng);
 //	}
 	if (status==STATUS_OK) {
 		if (chunkid>0) {
@@ -2445,7 +2445,7 @@ void matoclserv_fuse_write_chunk(matoclserventry *eptr,const uint8_t *data,uint3
 	uint8_t *ptr;
 	uint8_t status;
 	uint32_t inode;
-	uint32_t indx;
+	uint32_t idx;
 	uint64_t fleng;
 	uint64_t chunkid;
 	uint32_t msgid;
@@ -2462,11 +2462,11 @@ void matoclserv_fuse_write_chunk(matoclserventry *eptr,const uint8_t *data,uint3
 	}
 	msgid = get32bit(&data);
 	inode = get32bit(&data);
-	indx = get32bit(&data);
+	idx = get32bit(&data);
 	if (eptr->sesdata->sesflags&SESFLAG_READONLY) {
 		status = ERROR_EROFS;
 	} else {
-		status = fs_writechunk(inode,indx,&chunkid,&fleng,&opflag);
+		status = fs_writechunk(inode,idx,&chunkid,&fleng,&opflag);
 	}
 	if (status!=STATUS_OK) {
 		ptr = matoclserv_createpacket(eptr,MATOCL_FUSE_WRITE_CHUNK,5);
@@ -3115,6 +3115,85 @@ void matoclserv_fuse_quotacontrol(matoclserventry *eptr,const uint8_t *data,uint
 	}
 }
 
+void matoclserv_fuse_archive(matoclserventry *eptr,const uint8_t *data,uint32_t length) {
+	uint32_t msgid,inode,uid,gid;
+	uint8_t *ptr;
+	uint8_t status;
+	uint64_t snapshot_version;
+	if (length!=16) {
+		syslog(LOG_NOTICE,"CLTOMA_FUSE_ARCHIVE - wrong size (%"PRIu32"/16)",length);
+		eptr->mode = KILL;
+		return;
+	}
+	msgid = get32bit(&data);
+	inode = get32bit(&data);
+	uid = get32bit(&data);
+	gid = get32bit(&data);
+	status = fs_archive(eptr->sesdata->rootinode,eptr->sesdata->sesflags,inode,uid,gid,&snapshot_version);
+	if (status!=STATUS_OK) {
+		ptr = matoclserv_createpacket(eptr,MATOCL_FUSE_ARCHIVE,4+1);
+		put32bit(&ptr,msgid);
+		put8bit(&ptr,status);
+		return;
+	}
+	ptr = matoclserv_createpacket(eptr,MATOCL_FUSE_ARCHIVE,4+8);
+	put32bit(&ptr,msgid);
+	put64bit(&ptr,snapshot_version);
+}
+
+void matoclserv_fuse_restore(matoclserventry *eptr,const uint8_t *data,uint32_t length) {
+	uint32_t msgid,inode,parent,uid,gid;
+	uint64_t version;
+	uint16_t nleng_dst;
+	const uint8_t *name_dst;
+	uint8_t *ptr;
+	uint8_t status;
+	if (length<30) {
+		syslog(LOG_NOTICE,"CLTOMA_FUSE_RESTORE - wrong size (%"PRIu32")",length);
+		eptr->mode = KILL;
+		return;
+	}
+	msgid = get32bit(&data);
+	inode = get32bit(&data);
+	version = get64bit(&data);
+	parent = get32bit(&data);
+	nleng_dst = get16bit(&data);
+	if (length!=30U+nleng_dst) {
+		syslog(LOG_NOTICE,"CLTOMA_FUSE_RESTORE - wrong size (%"PRIu32":nleng_dst=%"PRIu16")",length,nleng_dst);
+		eptr->mode = KILL;
+		return;
+	}
+	name_dst = data;
+	data += nleng_dst;
+	uid = get32bit(&data);
+	gid = get32bit(&data);
+	status = fs_restore(eptr->sesdata->rootinode,eptr->sesdata->sesflags,inode,version,parent,nleng_dst,name_dst,uid,gid);
+	ptr = matoclserv_createpacket(eptr,MATOCL_FUSE_RESTORE,4+1);
+	put32bit(&ptr,msgid);
+	put8bit(&ptr,status);
+}
+
+void matoclserv_fuse_unarchive(matoclserventry *eptr,const uint8_t *data,uint32_t length) {
+	uint32_t msgid,inode,uid,gid;
+	uint64_t version;
+	uint8_t *ptr;
+	uint8_t status;
+	if (length!=24) {
+		syslog(LOG_NOTICE,"CLTOMA_FUSE_UNARCHIVE - wrong size (%"PRIu32"/29)",length);
+		eptr->mode = KILL;
+		return;
+	}
+	msgid = get32bit(&data);
+	inode = get32bit(&data);
+	version = get64bit(&data);
+	uid = get32bit(&data);
+	gid = get32bit(&data);
+	status = fs_unarchive(eptr->sesdata->rootinode,eptr->sesdata->sesflags,inode,version,uid,gid);
+	ptr = matoclserv_createpacket(eptr,MATOCL_FUSE_UNARCHIVE,4+1);
+	put32bit(&ptr,msgid);
+	put8bit(&ptr,status);
+}
+
 /*
 void matoclserv_fuse_eattr(matoclserventry *eptr,const uint8_t *data,uint32_t length) {
 	uint8_t mode,eattr,fneattr;
@@ -3639,6 +3718,15 @@ void matoclserv_gotpacket(matoclserventry *eptr,uint32_t type,const uint8_t *dat
 			case CLTOMA_FUSE_QUOTACONTROL:
 				matoclserv_fuse_quotacontrol(eptr,data,length);
 				break;
+			case CLTOMA_FUSE_ARCHIVE:
+				matoclserv_fuse_archive(eptr,data,length);
+				break;
+			case CLTOMA_FUSE_RESTORE:
+				matoclserv_fuse_restore(eptr,data,length);
+				break;
+			case CLTOMA_FUSE_UNARCHIVE:
+				matoclserv_fuse_unarchive(eptr,data,length);
+				break;
 /* for tools - also should be available for registered clients */
 			case CLTOMA_CSERV_LIST:
 				matoclserv_cserv_list(eptr,data,length);
@@ -3734,6 +3822,18 @@ void matoclserv_gotpacket(matoclserventry *eptr,uint32_t type,const uint8_t *dat
 			case CLTOMA_FUSE_QUOTACONTROL:
 				matoclserv_fuse_quotacontrol(eptr,data,length);
 				break;
+			case CLTOMA_FUSE_ARCHIVE:
+				matoclserv_fuse_archive(eptr,data,length);
+				break;
+			case CLTOMA_FUSE_RESTORE:
+				matoclserv_fuse_restore(eptr,data,length);
+				break;
+			case CLTOMA_FUSE_UNARCHIVE:
+				matoclserv_fuse_unarchive(eptr,data,length);
+				break;
+/* for tools - also should be available for registered clients */
+			case CLTOMA_CSERV_LIST:
+				matoclserv_cserv_list(eptr,data,length);
 /* ------ */
 			default:
 				syslog(LOG_NOTICE,"main master server module: got unknown message from mfstools (type:%"PRIu32")",type);

@@ -1110,6 +1110,31 @@
 #define CLTOMA_FUSE_RESERVED_INODES (PROTO_BASE+499)
 // N*[ inode:32 ]
 
+// 0x01E2
+#define CLTOMA_FUSE_ARCHIVE (PROTO_BASE+482)
+// msgid:32 inode:32 dump:8 uid:32 gid:32
+
+// 0x01E3
+#define MATOCL_FUSE_ARCHIVE (PROTO_BASE+483)
+// msgid:32 status:8  
+//          metaversion:64
+
+// 0x01E4
+#define CLTOMA_FUSE_RESTORE (PROTO_BASE+484)
+// msgid:32 inode:32 metaversion:64 inode_dst:32 name_dst:NAME uid:32 gid:32
+
+// 0x01E5
+#define MATOCL_FUSE_RESTORE (PROTO_BASE+485)
+// msgid:32 status:8
+
+// 0x01E6
+#define CLTOMA_FUSE_UNARCHIVE (PROTO_BASE+486)
+// msgid:32 inode:32 metaversion:64 uid:32 gid:32
+
+// 0x01E7
+#define MATOCL_FUSE_UNARCHIVE (PROTO_BASE+487)
+// msgid:32 status:8
+
 
 
 

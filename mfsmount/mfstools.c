@@ -404,9 +404,9 @@ int32_t socket_write(int sock,void *buff,uint32_t leng) {
 int master_register_old(int rfd) {
 	uint32_t i;
 	const uint8_t *rptr;
-	uint8_t *wptr,regbuff[8+72];
+	uint8_t *wptr,reqbufff[8+72];
 
-	wptr = regbuff;
+	wptr = reqbufff;
 	put32bit(&wptr,CLTOMA_FUSE_REGISTER);
 	put32bit(&wptr,68);
 	memcpy(wptr,FUSE_REGISTER_BLOB_TOOLS_NOACL,64);
@@ -414,15 +414,15 @@ int master_register_old(int rfd) {
 	put16bit(&wptr,VERSMAJ);
 	put8bit(&wptr,VERSMID);
 	put8bit(&wptr,VERSMIN);
-	if (tcpwrite(rfd,regbuff,8+68)!=8+68) {
+	if (tcpwrite(rfd,reqbufff,8+68)!=8+68) {
 		printf("register to master: send error\n");
 		return -1;
 	}
-	if (tcpread(rfd,regbuff,9)!=9) {
+	if (tcpread(rfd,reqbufff,9)!=9) {
 		printf("register to master: receive error\n");
 		return -1;
 	}
-	rptr = regbuff;
+	rptr = reqbufff;
 	i = get32bit(&rptr);
 	if (i!=MATOCL_FUSE_REGISTER) {
 		printf("register to master: wrong answer (type)\n");
@@ -443,9 +443,9 @@ int master_register_old(int rfd) {
 int master_register(int rfd,uint32_t cuid) {
 	uint32_t i;
 	const uint8_t *rptr;
-	uint8_t *wptr,regbuff[8+73];
+	uint8_t *wptr,reqbufff[8+73];
 
-	wptr = regbuff;
+	wptr = reqbufff;
 	put32bit(&wptr,CLTOMA_FUSE_REGISTER);
 	put32bit(&wptr,73);
 	memcpy(wptr,FUSE_REGISTER_BLOB_ACL,64);
@@ -455,15 +455,15 @@ int master_register(int rfd,uint32_t cuid) {
 	put16bit(&wptr,VERSMAJ);
 	put8bit(&wptr,VERSMID);
 	put8bit(&wptr,VERSMIN);
-	if (tcpwrite(rfd,regbuff,8+73)!=8+73) {
+	if (tcpwrite(rfd,reqbufff,8+73)!=8+73) {
 		printf("register to master: send error\n");
 		return -1;
 	}
-	if (tcpread(rfd,regbuff,9)!=9) {
+	if (tcpread(rfd,reqbufff,9)!=9) {
 		printf("register to master: receive error\n");
 		return -1;
 	}
-	rptr = regbuff;
+	rptr = reqbufff;
 	i = get32bit(&rptr);
 	if (i!=MATOCL_FUSE_REGISTER) {
 		printf("register to master: wrong answer (type)\n");
@@ -2272,6 +2272,287 @@ int snapshot(const char *dstname,char * const *srcnames,uint32_t srcelements,uin
 	}
 }
 
+int make_archive(const char *src,const char *dst) {
+	uint8_t reqbuff[50],*wptr,*buff=NULL,status;
+	const uint8_t *rptr;
+	uint32_t inode,cmd,leng,uid,gid;
+	FILE *f;
+	int fd;
+	if (!(f=fopen(dst,"w"))) {
+		fprintf(stderr, "can not open %s for write: %s\n",dst,strerr(errno));
+		return -1;
+	}
+	fd = open_master_conn(src,&inode,NULL,0,0);
+	if (fd<0) {
+		return -1;
+	}
+	uid = getuid();
+	gid = getgid();
+	wptr = reqbuff;
+	put32bit(&wptr,CLTOMA_FUSE_ARCHIVE);
+	put32bit(&wptr,16);
+	put32bit(&wptr,0);
+	put32bit(&wptr,inode);
+	put32bit(&wptr,uid);
+	put32bit(&wptr,gid);
+	if (tcpwrite(fd,reqbuff,28)!=(int32_t)(28)) {
+		printf("%s->%s: master query: send error\n",src,dst);
+		close_master_conn(1);
+		return -1;
+	}
+	if (tcpread(fd,reqbuff,8)!=8) {
+		printf("%s->%s: master query: receive error\n",src,dst);
+		close_master_conn(1);
+		return -1;
+	}
+	rptr = reqbuff;
+	cmd = get32bit(&rptr);
+	leng = get32bit(&rptr);
+	if (cmd!=MATOCL_FUSE_ARCHIVE) {
+		printf("%s->%s: master query: wrong answer (type)\n",src,dst);
+		close_master_conn(1);
+		return -1;
+	}
+	buff = malloc(leng);
+	if (tcpread(fd,buff,leng)!=(int32_t)leng) {
+		printf("%s->%s: master query: receive error\n",src,dst);
+		goto FAIL;
+	}
+	rptr = buff;
+	cmd = get32bit(&rptr);	// queryid
+	if (cmd!=0) {
+		printf("master query: wrong answer (queryid: %u)\n",cmd);
+		goto FAIL;
+	}
+	leng -= 4;
+	if (leng==1) {
+		status = get8bit(&rptr);
+		if (status!=0) {
+			printf("%s->%s: archive failed: %s\n",src,dst,mfsstrerr(status));
+			goto FAIL;
+		}
+	}
+	if (leng!=8) {
+		printf("invalid length\n");
+		goto FAIL;
+	}
+	uint64_t uuid = get64bit(&rptr);
+	size_t n = sprintf((char*)reqbuff,"%"PRIu32" %"PRIu64"\n",inode,uuid);
+	printf("%s\n",reqbuff);
+	if (fwrite(reqbuff,1,n,f)!=n) {
+		printf("write failed: %s\n",strerr(errno));
+		goto FAIL;
+	}
+	free(buff);
+	fclose(f);
+	close_master_conn(0);
+	return 0;
+FAIL:
+	if (buff) free(buff);
+	if (f) {
+		fclose(f);
+		unlink(dst);
+	}
+	close_master_conn(1);
+	return -1;
+}
+
+int archive(const char*srcname,const char *dstname,int canoverwrite) {
+	char to[PATH_MAX+1],base[PATH_MAX+1];
+	struct stat sst,dst;
+
+	if (lstat(srcname,&sst)<0) {
+		printf("%s: lstat error: %s\n",srcname,strerr(errno));
+		return -1;
+	}
+	if (stat(dstname,&dst)==0) {	// dst exist
+		if (!S_ISDIR(dst.st_mode)) {	// dst id not a directory
+			if (!canoverwrite) {
+				printf("file %s already exists\n",dstname);
+				return -1;
+			}
+		} else {	// dst is a directory
+			if (bsd_basename(srcname,base)<0) {
+				printf("%s: basename error\n",srcname);
+				return -1;
+			}
+			snprintf(to,PATH_MAX,"%s/%s",dstname,base);
+			dstname = to;
+		}
+	}
+	return make_archive(srcname,dstname);
+}
+
+int make_restore(uint32_t inode,uint64_t version,const char *dstdir,const char *dstbase) {
+	uint8_t reqbuff[300],*wptr,status;
+	const uint8_t *rptr;
+	uint32_t inode_dst,cmd,leng;
+	int fd = open_master_conn(dstdir,&inode_dst,NULL,0,0);
+	if (fd<0) {
+		return -1;
+	}
+	wptr = reqbuff;
+	leng = strlen(dstbase);
+	put32bit(&wptr,CLTOMA_FUSE_RESTORE);
+	put32bit(&wptr,30+leng);
+	put32bit(&wptr,0);
+	put32bit(&wptr,inode);
+	put64bit(&wptr,version);
+	put32bit(&wptr,inode_dst);
+	put16bit(&wptr,leng);
+	memcpy(wptr,dstbase,leng);
+	wptr += leng;
+	put32bit(&wptr,getuid());
+	put32bit(&wptr,getgid());
+	if (tcpwrite(fd,reqbuff,8+34+leng)!=(int32_t)(8+34+leng)) {
+		printf("%s/%s: master query: send error\n",dstdir,dstbase);
+		goto FAIL;
+	}
+	if (tcpread(fd,reqbuff,13)!=13) {
+		printf("%s/%s: master query: receive error\n",dstdir,dstbase);
+		goto FAIL;
+	}
+	rptr = reqbuff;
+	cmd = get32bit(&rptr);
+	leng = get32bit(&rptr);
+	if (cmd!=MATOCL_FUSE_RESTORE) {
+		printf("%s/%s: master query: wrong answer (type)\n",dstdir,dstbase);
+		goto FAIL;
+	}
+	cmd = get32bit(&rptr);	// queryid
+	if (cmd!=0) {
+		printf("master query: wrong answer (queryid: %u)\n",cmd);
+		goto FAIL;
+	}
+	status = get8bit(&rptr);
+	if (status!=0) {
+		printf("%s: restore failed: %s\n",dstbase,mfsstrerr(status));
+		goto FAIL;
+	}
+	close_master_conn(0);
+	return 0;
+FAIL:
+	close_master_conn(1);
+	return -1;
+}
+
+int restore(const char *src,const char*dstname) {
+	char to[PATH_MAX+1],base[PATH_MAX+1],dir[PATH_MAX+1];
+	struct stat sst,dst;
+	uint32_t inode;
+	uint64_t version;
+	FILE *f = fopen(src,"r");
+	if (!f) {
+		fprintf(stderr,"open %s failed: %s\n",src,strerr(errno));
+		return -1;
+	}
+	if (fscanf(f,"%"PRIu32" %"PRIu64,&inode,&version)<2) {
+		fprintf(stderr,"read failed:%s\n",strerr(errno));
+		fclose(f);
+		return -1;
+	}
+	fclose(f);
+
+	if (lstat(src,&sst)<0) {
+		printf("%s: lstat error: %s\n",src,strerr(errno));
+		return -1;
+	}
+	if (stat(dstname,&dst)==0) {	// dst exist
+		if (!S_ISDIR(dst.st_mode)) {	// dst id not a directory
+			printf("file %s already exists\n",dstname);
+			return -1;
+		} else {	// dst is a directory
+			if (bsd_basename(src,base)<0) {
+				printf("%s: basename error\n",src);
+				return -1;
+			}
+			if (realpath(dstname,dir)==NULL) {
+				printf("%s: realpath error\n",dstname);
+				return -1;
+			}
+		}
+	} else {
+		if (bsd_dirname(dstname,dir)<0) {
+			printf("%s: dirname error\n",dstname);
+			return -1;
+		}
+		if (stat(dir,&dst)<0) {
+			printf("%s: parent dir do not exists\n",dir);
+			return -1;
+		}
+		if (realpath(dir,to)==NULL) {
+			printf("%s: realpath error\n",dstname);
+			return -1;
+		}
+		if (bsd_basename(dstname,base)<0) {
+			printf("%s: basename error\n",dstname);
+			return -1;
+		}
+	}
+	return make_restore(inode,version,to,base);
+}
+
+int unarchive(const char *src, const char *mount_point) {
+	uint8_t reqbuff[50],*wptr,status;
+	const uint8_t *rptr;
+	uint32_t inode,cmd,leng,uid,gid;
+	uint64_t version;
+	FILE *f = fopen(src,"r");
+	if (!f) {
+		fprintf(stderr,"can not open %s: %s\n",src,strerr(errno));
+		return -1;
+	}
+	if (fscanf(f,"%"PRIu32" %"PRIu64,&inode,&version)<2) {
+		fprintf(stderr,"read fail: %s\n",strerr(errno));
+		return -1;
+	}
+	fclose(f);
+	uint32_t mount_inode;
+	int fd = open_master_conn(mount_point,&mount_inode,NULL,0,0);
+	if (fd<0) {
+		return -1;
+	}
+	uid = getuid();
+	gid = getgid();
+	wptr = reqbuff;
+	put32bit(&wptr,CLTOMA_FUSE_UNARCHIVE);
+	put32bit(&wptr,24);
+	put32bit(&wptr,0);
+	put32bit(&wptr,inode);
+	put64bit(&wptr,version);
+	put32bit(&wptr,uid);
+	put32bit(&wptr,gid);
+	if (tcpwrite(fd,reqbuff,37)!=(int32_t)(37)) {
+		printf("%s: master query: send error\n",src);
+		goto FAIL;
+	}
+	if (tcpread(fd,reqbuff,13)!=13) {
+		printf("%s: master query: receive error\n",src);
+		goto FAIL;
+	}
+	rptr = reqbuff;
+	cmd = get32bit(&rptr);
+	leng = get32bit(&rptr);
+	if (cmd!=MATOCL_FUSE_UNARCHIVE) {
+		printf("%s: master query: wrong answer (type)\n",src);
+		goto FAIL;
+	}
+	cmd = get32bit(&rptr);	// queryid
+	if (cmd!=0) {
+		printf("master query: wrong answer (queryid: %u)\n",cmd);
+		goto FAIL;
+	}
+	status = get8bit(&rptr);
+	if (status!=0) {
+		printf("%s: unarchive failed: %s\n",src,mfsstrerr(status));
+		goto FAIL;
+	}
+	return 0;
+FAIL:	
+	close_master_conn(1);
+	return -1;
+}
+
 enum {
 	MFSGETGOAL=1,
 	MFSSETGOAL,
@@ -2283,6 +2564,9 @@ enum {
 	MFSDIRINFO,
 	MFSFILEREPAIR,
 	MFSMAKESNAPSHOT,
+	MFSARCHIVE,
+	MFSRESTORE,
+	MFSUNARCHIVE,
 	MFSGETEATTR,
 	MFSSETEATTR,
 	MFSDELEATTR,
@@ -2360,6 +2644,16 @@ void usage(int f) {
 		case MFSMAKESNAPSHOT:
 			fprintf(stderr,"make snapshot (lazy copy)\n\nusage: mfsmakesnapshot [-o] src [src ...] dst\n");
 			fprintf(stderr,"-o - allow to overwrite existing objects\n");
+			break;
+		case MFSARCHIVE:
+			fprintf(stderr,"make offline snapshot (lazy copy)\n\nusage: mfsarchive [-o] src dst\n");
+			fprintf(stderr,"-o - allow to overwrite existing file\n");
+			break;
+		case MFSRESTORE:
+			fprintf(stderr,"load offline snapshot (lazy copy)\n\nusage: mfsrestore src dst\n");
+			break;
+		case MFSUNARCHIVE:
+			fprintf(stderr,"rollback archived chunks\n\nusage: mfsunarchive src mountpoint\n");
 			break;
 		case MFSGETEATTR:
 			fprintf(stderr,"get objects extra attributes\n\nusage: mfsgeteattr [-nhHr] name [name ...]\n");
@@ -2441,6 +2735,8 @@ int main(int argc,char **argv) {
 			SYMLINK("mfsdirinfo")
 			SYMLINK("mfsfilerepair")
 			SYMLINK("mfsmakesnapshot")
+			SYMLINK("mfsarchive")
+			SYMLINK("mfsrestore")
 			SYMLINK("mfsgeteattr")
 			SYMLINK("mfsseteattr")
 			SYMLINK("mfsdeleattr")
@@ -2460,7 +2756,7 @@ int main(int argc,char **argv) {
 			fprintf(stderr,"\ntools:\n");
 			fprintf(stderr,"\tmfsgetgoal\n\tmfssetgoal\n\tmfsgettrashtime\n\tmfssettrashtime\n");
 			fprintf(stderr,"\tmfscheckfile\n\tmfsfileinfo\n\tmfsappendchunks\n\tmfsdirinfo\n\tmfsfilerepair\n");
-			fprintf(stderr,"\tmfsmakesnapshot\n");
+			fprintf(stderr,"\tmfsmakesnapshot\n\tmfsarchive\n\tmfsrestore\n");
 			fprintf(stderr,"\tmfsgeteattr\n\tmfsseteattr\n\tmfsdeleattr\n");
 #if VERSHEX>=0x010700
 			fprintf(stderr,"\tmfsgetquota\n\tmfssetquota\n\tmfsdelquota\n");
@@ -2520,6 +2816,12 @@ int main(int argc,char **argv) {
 		f=MFSFILEREPAIR;
 	} else if (CHECKNAME("mfsmakesnapshot")) {
 		f=MFSMAKESNAPSHOT;
+	} else if (CHECKNAME("mfsarchive")) {
+		f=MFSARCHIVE;
+	} else if (CHECKNAME("mfsrestore")) {
+		f=MFSRESTORE;
+	} else if (CHECKNAME("mfsunarchive")) {
+		f=MFSUNARCHIVE;
 	} else {
 		fprintf(stderr,"unknown binary name\n");
 		return 1;
@@ -2564,6 +2866,33 @@ int main(int argc,char **argv) {
 			usage(f);
 		}
 		return snapshot(argv[argc-1],argv,argc-1,oflag);
+	case MFSARCHIVE:
+		while ((ch=getopt(argc,argv,"o"))!=-1) {
+			switch(ch) {
+			case 'o':
+				oflag=1;
+				break;
+			}
+		}
+		argc -= optind;
+		argv += optind;
+		if (argc==2) {
+			return archive(argv[0],argv[1],oflag);
+		} else {
+			usage(f);
+		}
+	case MFSRESTORE:
+		if (argc==3) {
+			return restore(argv[1],argv[2]);
+		} else {
+			usage(f);
+		}
+	case MFSUNARCHIVE:
+		if (argc==2) {
+			return unarchive(argv[0],argv[1]);
+		} else {
+			usage(f);
+		}
 	case MFSGETGOAL:
 	case MFSSETGOAL:
 	case MFSGETTRASHTIME:

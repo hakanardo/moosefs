@@ -59,6 +59,8 @@
 #define HASHSIZE 0x100000
 #define HASHPOS(chunkid) (((uint32_t)chunkid)&0xFFFFF)
 
+#define ARCHIVE_GOAL 3
+
 #ifndef METARESTORE
 
 enum {JOBS_INIT,JOBS_EVERYLOOP,JOBS_EVERYSECOND};
@@ -1192,6 +1194,27 @@ int chunk_multi_modify(uint32_t ts,uint64_t *nchunkid,uint64_t ochunkid,uint8_t 
 #endif
 	return STATUS_OK;
 }
+
+int chunk_archive(uint64_t chunkid) {
+	chunk *c;
+	c = chunk_find(chunkid);
+	if (c==NULL) {
+		return ERROR_NOCHUNK;
+	}
+	chunk_add_file_int(c,ARCHIVE_GOAL);
+	return STATUS_OK;
+}
+
+int chunk_unarchive(uint64_t chunkid) {
+	chunk *c;
+	c = chunk_find(chunkid);
+	if (c==NULL) {
+		return ERROR_NOCHUNK;
+	}
+	chunk_delete_file_int(c,ARCHIVE_GOAL);
+	return STATUS_OK;
+}
+
 
 #ifndef METARESTORE
 int chunk_multi_truncate(uint64_t *nchunkid,uint64_t ochunkid,uint32_t length,uint8_t goal) {
@@ -2406,7 +2429,6 @@ void chunk_do_jobs(chunk *c,uint16_t scount,double minusage,double maxusage) {
 }
 
 void chunk_jobs_main(void) {
-	uint32_t i,l,lc,r;
 	uint16_t uscount,tscount;
 	static uint16_t lasttscount=0;
 	static uint16_t maxtscount=0;
@@ -2483,7 +2505,6 @@ void chunk_jobs_main(void) {
 /* ---- */
 
 // #define CHUNKFSIZE11 12
-#define CHUNKFSIZE 16
 #define CHUNKCNT 1000
 
 /*
@@ -2551,14 +2572,12 @@ void chunk_dump(void) {
 			if (lockedto<now) {
 				lockedto = 0;
 			}
-			printf("*|i:%016"PRIX64"|v:%08"PRIX32"|g:%"PRIu8"|t:%10"PRIu32"\n",c->chunkid,c->version,c->goal,lockedto);
 		}
 	}
 }
 
 #endif
 
-int chunk_load(FILE *fd) {
 	uint8_t hdr[8];
 	uint8_t loadbuff[CHUNKFSIZE];
 	const uint8_t *ptr;
@@ -2577,8 +2596,6 @@ int chunk_load(FILE *fd) {
 	ptr = hdr;
 	nextchunkid = get64bit(&ptr);
 	for (;;) {
-		r = fread(loadbuff,1,CHUNKFSIZE,fd);
-		if (r!=CHUNKFSIZE) {
 			return -1;
 		}
 		ptr = loadbuff;
@@ -2837,7 +2854,6 @@ void chunk_reload(void) {
 int chunk_strinit(void) {
 	uint32_t i;
 #ifndef METARESTORE
-	uint32_t j;
 	uint32_t looptime;
 
 	ReplicationsDelayInit = cfg_getuint32("REPLICATIONS_DELAY_INIT",300);
@@ -2914,12 +2930,9 @@ int chunk_strinit(void) {
 		chunkhash[i]=NULL;
 	}
 #ifndef METARESTORE
-	for (i=0 ; i<11 ; i++) {
-		for (j=0 ; j<11 ; j++) {
-			allchunkcounts[i][j]=0;
-			regularchunkcounts[i][j]=0;
-		}
-	}
+    memset(allchunkcounts,0,sizeof(allchunkcounts));
+    memset(regularchunkcounts,0,sizeof(allchunkcounts));
+
 	jobshpos = 0;
 	jobsrebalancecount = 0;
 	starttime = main_time();

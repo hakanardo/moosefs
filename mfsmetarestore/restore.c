@@ -565,6 +565,42 @@ int do_snapshot(const char *filename,uint64_t lv,uint32_t ts,char *ptr) {
 	return fs_snapshot(ts,inode,parent,strlen((char*)name),name,canoverwrite);
 }
 
+int do_archive(const char *filename,uint64_t lv,uint32_t ts,char *ptr) {
+   uint32_t inode;
+   EAT(ptr,filename,lv,'(');
+   GETU32(inode,ptr);
+   EAT(ptr,filename,lv,')');
+   return fs_log_archive(ts,inode);
+}
+
+int do_restore(const char *filename,uint64_t lv,uint32_t ts,char *ptr) {
+   uint32_t inode,parent;
+   uint64_t version;
+   uint8_t name[256];
+   EAT(ptr,filename,lv,'(');
+   GETU32(inode,ptr);
+   EAT(ptr,filename,lv,',');
+   GETU64(version,ptr);
+   EAT(ptr,filename,lv,',');
+   GETU32(parent,ptr);
+   EAT(ptr,filename,lv,',');
+   GETNAME(name,ptr,filename,lv,')');
+   EAT(ptr,filename,lv,')');
+   return fs_log_restore(ts,inode,version,parent,strlen((char*)name),name);
+}
+
+int do_unarchive(const char *filename,uint64_t lv,uint32_t ts,char *ptr) {
+   uint32_t inode;
+   uint64_t version;
+   uint8_t older;
+   EAT(ptr,filename,lv,'(');
+   GETU32(inode,ptr);
+   EAT(ptr,filename,lv,',');
+   GETU64(version,ptr);
+   EAT(ptr,filename,lv,')');
+   return fs_log_unarchive(ts,inode,version,older);
+}
+
 int do_symlink(const char *filename,uint64_t lv,uint32_t ts,char *ptr) {
 	uint32_t parent,uid,gid,inode;
 	uint8_t name[256];
@@ -674,6 +710,8 @@ int restore_line(const char *filename,uint64_t lv,char *line) {
 				status = do_acquire(filename,lv,ts,ptr+7);
 			} else if (strncmp(ptr,"AQUIRE",6)==0) {
 				status = do_acquire(filename,lv,ts,ptr+6);
+			} else if (strncmp(ptr,"ARCHIVE",7)==0) {
+				status = do_archive(filename,lv,ts,ptr+7);
 			} else {
 				printf("%s:%"PRIu64": unknown entry '%s'\n",filename,lv,ptr);
 			}
@@ -743,6 +781,8 @@ int restore_line(const char *filename,uint64_t lv,char *line) {
 				status = do_release(filename,lv,ts,ptr+7);
 			} else if (strncmp(ptr,"REPAIR",6)==0) {
 				status = do_repair(filename,lv,ts,ptr+6);
+			} else if (strncmp(ptr,"RESTORE",7)==0) {
+				status = do_restore(filename,lv,ts,ptr+7);
 			} else {
 				printf("%s:%"PRIu64": unknown entry '%s'\n",filename,lv,ptr);
 			}
@@ -782,6 +822,8 @@ int restore_line(const char *filename,uint64_t lv,char *line) {
 				status = do_undel(filename,lv,ts,ptr+5);
 			} else if (strncmp(ptr,"UNLOCK",6)==0) {
 				status = do_unlock(filename,lv,ts,ptr+6);
+			} else if (strncmp(ptr,"UNARCHIVE",9)==0) {
+				status = do_unarchive(filename,lv,ts,ptr+9);
 			} else {
 				printf("%s:%"PRIu64": unknown entry '%s'\n",filename,lv,ptr);
 			}

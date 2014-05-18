@@ -19,6 +19,9 @@ usr/bin/mfsseteattr
 usr/bin/mfssettrashtime
 usr/bin/mfstools
 usr/bin/mfssnapshot
+usr/bin/mfsarchive 
+usr/bin/mfsrestore 
+usr/bin/mfsunarchive
 usr/share/man/man1/mfsappendchunks.1
 usr/share/man/man1/mfscheckfile.1
 usr/share/man/man1/mfsdeleattr.1
