@@ -2888,8 +2888,8 @@ int main(int argc,char **argv) {
 			usage(f);
 		}
 	case MFSUNARCHIVE:
-		if (argc==2) {
-			return unarchive(argv[0],argv[1]);
+		if (argc==3) {
+			return unarchive(argv[1],argv[2]);
 		} else {
 			usage(f);
 		}

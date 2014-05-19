@@ -4835,7 +4835,7 @@ uint8_t fs_archive(uint32_t rootinode,uint8_t sesflags,uint32_t inode,uint32_t u
 
 #endif
 
-uint8_t fs_log_archive(uint32_t ts,uint32_t inode) {
+uint8_t fs_log_archive(uint32_t ts, uint32_t inode) {
 	fsnode *sp;
 	sp = fsnodes_id_to_node(inode);
 	if (!sp) {
@@ -5109,7 +5109,7 @@ uint8_t fs_unarchive(uint32_t rootinode,uint8_t sesflags,uint32_t inode,uint64_t
 	(void)gid;
 	uint8_t status = fs_do_unarchive(inode,version);
 	if (status==STATUS_OK) {
-		changelog(metaversion++,"%"PRIu32"|UNARCHIVE(%"PRIu32",%"PRIu64)",main_time(),inode,version);
+		changelog(metaversion++,"%"PRIu32"|UNARCHIVE(%"PRIu32",%"PRIu64")",main_time(),inode,version);
 	}
 	return status;
 }

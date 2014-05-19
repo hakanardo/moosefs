@@ -592,13 +592,12 @@ int do_restore(const char *filename,uint64_t lv,uint32_t ts,char *ptr) {
 int do_unarchive(const char *filename,uint64_t lv,uint32_t ts,char *ptr) {
    uint32_t inode;
    uint64_t version;
-   uint8_t older;
    EAT(ptr,filename,lv,'(');
    GETU32(inode,ptr);
    EAT(ptr,filename,lv,',');
    GETU64(version,ptr);
    EAT(ptr,filename,lv,')');
-   return fs_log_unarchive(ts,inode,version,older);
+   return fs_log_unarchive(ts,inode,version);
 }
 
 int do_symlink(const char *filename,uint64_t lv,uint32_t ts,char *ptr) {

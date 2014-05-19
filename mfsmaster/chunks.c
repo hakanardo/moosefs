@@ -2429,6 +2429,7 @@ void chunk_do_jobs(chunk *c,uint16_t scount,double minusage,double maxusage) {
 }
 
 void chunk_jobs_main(void) {
+	uint32_t i,l,lc,r;
 	uint16_t uscount,tscount;
 	static uint16_t lasttscount=0;
 	static uint16_t maxtscount=0;
@@ -2505,6 +2506,7 @@ void chunk_jobs_main(void) {
 /* ---- */
 
 // #define CHUNKFSIZE11 12
+#define CHUNKFSIZE 16
 #define CHUNKCNT 1000
 
 /*
@@ -2578,6 +2580,7 @@ void chunk_dump(void) {
 
 #endif
 
+int chunk_load(FILE *fd) {
 	uint8_t hdr[8];
 	uint8_t loadbuff[CHUNKFSIZE];
 	const uint8_t *ptr;
@@ -2596,6 +2599,8 @@ void chunk_dump(void) {
 	ptr = hdr;
 	nextchunkid = get64bit(&ptr);
 	for (;;) {
+       r = fread(loadbuff,1,CHUNKFSIZE,fd);
+       if (r!=CHUNKFSIZE) {
 			return -1;
 		}
 		ptr = loadbuff;
