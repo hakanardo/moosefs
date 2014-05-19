@@ -30,6 +30,8 @@
 #include <sys/stat.h>
 #include <inttypes.h>
 #include <errno.h>
+#include <dirent.h>
+
 
 #include "MFSCommunication.h"
 
@@ -3059,7 +3061,7 @@ static uint8_t fsnodes_archive(fsnode *node) {
 	return STATUS_OK;
 }
 
-static const char *ARCHIVE_NAME = "archives/i%"PRIu32"/v%"PRIu64;
+static const char *ARCHIVE_NAME = "archives/i%"PRIu32"_v%"PRIu64;
 
 #ifndef METARESTORE
 static void fs_storenode(fsnode *f,FILE *fd,int sessions);
@@ -3097,17 +3099,6 @@ static int fsnodes_dump(fsnode *node) {
 		return ERROR_ENOTDIR;
 	}
 	char buf[255];
-	sprintf(buf,"archives/i%"PRIu32"",node->id);
-	if (stat(buf,&st)<0) {
-		if (errno!=ENOENT) {
-			return ERROR_ENOENT;
-		}
-		if (mkdir(buf,0740)<0) {
-			return ERROR_IO;
-		}
-	} else if (!S_ISDIR(st.st_mode)) {
-		return ERROR_ENOTDIR;
-	}
 	sprintf(buf,ARCHIVE_NAME,node->id,metaversion);
 	FILE *fd=fopen(buf,"wb");
 	if (!fd) {
@@ -8740,6 +8731,24 @@ uint64_t fs_loadversion(FILE *fd) {
 	return fversion;
 }
 
+int fs_loadarchives() {
+	DIR *dp;
+	struct dirent *ep;   
+	FILE *fd;
+
+	dp = opendir("archives");
+	if (!dp) return -1;
+
+	while ((ep = readdir(dp))) {
+		fd = fopen(ep->d_name,"rb");
+		// FIXME
+		fclose(fd);
+    }
+    closedir(dp);
+	return 0;
+}
+
+
 int fs_load(FILE *fd,int ignoreflag,uint8_t fver) {
 	uint8_t hdr[16];
 	const uint8_t *ptr;
@@ -8885,6 +8894,15 @@ int fs_load(FILE *fd,int ignoreflag,uint8_t fver) {
 			fprintf(stderr,"ok\n");
 		}
 	}
+					
+	fprintf(stderr,"loading chunk refcounts from archives ... ");
+	if (fs_loadarchives()<0) {
+#ifndef METARESTORE
+		syslog(LOG_ERR,"error reading metadata (archives)");
+#endif
+		return -1;
+	}
+	fprintf(stderr,"ok\n");
 
 	fprintf(stderr,"checking filesystem consistency ... ");
 	fflush(stderr);
