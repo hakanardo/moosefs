@@ -8735,12 +8735,19 @@ int fs_loadarchives() {
 	DIR *dp;
 	struct dirent *ep;   
 	FILE *fd;
+	char buf[255];
 
 	dp = opendir("archives");
-	if (!dp) return -1;
+	if (!dp) {
+		return -1;
+	}
 
 	while ((ep = readdir(dp))) {
-		fd = fopen(ep->d_name,"rb");
+		sprintf(buf,"archives/%s", ep->d_name);
+		fd = fopen(buf,"rb");
+		if (!fd) {
+			return -1;
+		}
 		// FIXME
 		fclose(fd);
     }
