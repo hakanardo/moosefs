@@ -4827,6 +4827,7 @@ uint8_t fs_archive(uint32_t rootinode,uint8_t sesflags,uint32_t inode,uint32_t u
 #endif
 
 uint8_t fs_log_archive(uint32_t ts, uint32_t inode) {
+	(void) ts;
 	fsnode *sp;
 	sp = fsnodes_id_to_node(inode);
 	if (!sp) {
@@ -5031,15 +5032,24 @@ uint8_t fs_log_restore(uint32_t ts,uint32_t inode,uint64_t version,uint32_t inod
 	return status;
 }
 
-#define BATCH 65536
 uint8_t fs_do_unarchive(uint32_t inode,uint64_t version) {
+	char fn[256];
+	sprintf(fn,ARCHIVE_NAME,inode,version);
+	uint8_t r = fs_walk_archive_chunks(fn, chunk_unarchive);
+	if (r==STATUS_OK) {
+		unlink(fn);
+	}	
+	return r;
+}
+
+#define BATCH 65536
+uint8_t fs_walk_archive_chunks(char *archive_name, int (*opperation)(uint64_t)) {
 	uint8_t buf[BATCH*8];
 	const uint8_t *ptr;
 	uint32_t pleng,ch;
 	FILE *fd;
 
-	sprintf((char*)buf,ARCHIVE_NAME,inode,version);
-	fd = fopen((char*)buf,"rb");
+	fd = fopen(archive_name,"rb");
 	if (!fd) {
 		return ERROR_ENOENT;
 	}
@@ -5079,7 +5089,7 @@ uint8_t fs_do_unarchive(uint32_t inode,uint64_t version) {
 				for (i=0 ; i<batch ; i++) {
 					uint64_t chunkid=get64bit(&ptr);
 					if (chunkid) {
-						chunk_unarchive(chunkid);
+						opperation(chunkid);
 					}
 				}
 				ch-=batch;
@@ -5087,8 +5097,6 @@ uint8_t fs_do_unarchive(uint32_t inode,uint64_t version) {
 		}
 	}
 	fclose(fd);
-	sprintf((char*)buf,ARCHIVE_NAME,inode,version);
-	unlink((char*)buf);
 	return STATUS_OK;
 }
 
@@ -8734,7 +8742,6 @@ uint64_t fs_loadversion(FILE *fd) {
 int fs_loadarchives() {
 	DIR *dp;
 	struct dirent *ep;   
-	FILE *fd;
 	char buf[255];
 
 	dp = opendir("archives");
@@ -8743,13 +8750,13 @@ int fs_loadarchives() {
 	}
 
 	while ((ep = readdir(dp))) {
-		sprintf(buf,"archives/%s", ep->d_name);
-		fd = fopen(buf,"rb");
-		if (!fd) {
-			return -1;
+		if (ep->d_type != DT_DIR) {
+			sprintf(buf,"archives/%s", ep->d_name);
+			uint8_t r = fs_walk_archive_chunks(buf, chunk_archive);
+			if (r != STATUS_OK) {
+				return -1;
+			}
 		}
-		// FIXME
-		fclose(fd);
     }
     closedir(dp);
 	return 0;

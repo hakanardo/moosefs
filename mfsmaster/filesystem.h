@@ -22,6 +22,7 @@
 #include <inttypes.h>
 
 uint64_t fs_getversion(void);
+uint8_t fs_walk_archive_chunks(char *archive_name, int (*opperation)(uint64_t));
 
 #ifdef METARESTORE
 
