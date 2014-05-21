@@ -8909,14 +8909,14 @@ int fs_load(FILE *fd,int ignoreflag,uint8_t fver) {
 		}
 	}
 					
+#ifndef METARESTORE
 	fprintf(stderr,"loading chunk refcounts from archives ... ");
 	if (fs_loadarchives()<0) {
-#ifndef METARESTORE
 		syslog(LOG_ERR,"error reading metadata (archives)");
-#endif
 		return -1;
 	}
 	fprintf(stderr,"ok\n");
+#endif
 
 	fprintf(stderr,"checking filesystem consistency ... ");
 	fflush(stderr);
