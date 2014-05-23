@@ -71,6 +71,7 @@ int fs_init(const char *fname,int ignoreflag);
 uint8_t fs_log_archive(uint32_t ts,uint32_t inode);
 uint8_t fs_log_restore(uint32_t ts,uint32_t inode,uint64_t version,uint32_t inode_dst,uint16_t name_len,uint8_t *name_dst);
 uint8_t fs_log_unarchive(uint32_t ts,uint32_t inode,uint64_t version);
+void fs_set_archives_path(char *path);
 
 #else
 

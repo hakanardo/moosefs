@@ -440,6 +440,15 @@ int main(int argc,char **argv) {
 		free(filenames);
 	}
 
+	char *t=strrchr(metaout, '/');
+	if (t) {
+		t[0] = '\0';
+	}
+	fs_set_archives_path(metaout);
+	if (t) {
+		t[0] = '/';
+	}
+
 	status = merger_loop();
 
 	if (status<0 && savebest==0) {

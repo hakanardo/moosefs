@@ -3061,9 +3061,8 @@ static uint8_t fsnodes_archive(fsnode *node) {
 	return STATUS_OK;
 }
 
-static const char *ARCHIVE_NAME = "archives/i%"PRIu32"_v%"PRIu64;
+static const char *ARCHIVE_NAME = "%s/archives/i%"PRIu32"_v%"PRIu64;
 
-#ifndef METARESTORE
 static void fs_storenode(fsnode *f,FILE *fd,int sessions);
 static void fsnodes_dump_node(fsnode *f,FILE *fd){
 	fsedge *e;
@@ -3086,20 +3085,29 @@ static void fsnodes_dump_edge(fsnode *node,FILE *fd) {
 	}
 }
 
+static char *archives_path = ".";
+void fs_set_archives_path(char *path) {
+	if (strcmp(archives_path, ".")) {
+		free(archives_path);
+	}
+	archives_path = strdup(path);
+}
+
 static int fsnodes_dump(fsnode *node) {
 	struct stat st;
-	if (stat("archives",&st)<0) {
+	char buf[255];
+	sprintf(buf,"%s/archives",archives_path);
+	if (stat(buf,&st)<0) {
 		if (errno!=ENOENT) {
 			return ERROR_ENOENT;
 		}
-		if (mkdir("archives",0740)<0) {
+		if (mkdir(buf,0740)<0) {
 			return ERROR_IO;
 		}
-	} if (!S_ISDIR(st.st_mode)) {
+	} else if (!S_ISDIR(st.st_mode)) {
 		return ERROR_ENOTDIR;
 	}
-	char buf[255];
-	sprintf(buf,ARCHIVE_NAME,node->id,metaversion);
+	sprintf(buf,ARCHIVE_NAME,archives_path,node->id,metaversion);
 	FILE *fd=fopen(buf,"wb");
 	if (!fd) {
 		return ERROR_IO;
@@ -3111,7 +3119,6 @@ static int fsnodes_dump(fsnode *node) {
 	fclose(fd);
 	return STATUS_OK;
 }
-#endif
 
 static inline int fsnodes_namecheck(uint32_t nleng,const uint8_t *name) {
 	uint32_t i;
@@ -4834,9 +4841,7 @@ uint8_t fs_log_archive(uint32_t ts, uint32_t inode) {
 		return ERROR_ENOENT;
 	}
 	fsnodes_archive(sp);
-#ifndef METARESTORE
 	fsnodes_dump(sp);
-#endif
 	metaversion++;
 	return STATUS_OK;
 }
@@ -4921,7 +4926,7 @@ uint8_t fs_do_restore(uint32_t ts,uint32_t inode,uint64_t version,fsnode *parent
 	uint32_t inodes,oldid,newid;
 	FILE *fd;
 
-	sprintf(buf,ARCHIVE_NAME,inode,version);
+	sprintf(buf,ARCHIVE_NAME,archives_path,inode,version);
 	fd=fopen(buf,"rb");
 	if (!fd) {
 		return ERROR_ENOENT;
@@ -5034,7 +5039,7 @@ uint8_t fs_log_restore(uint32_t ts,uint32_t inode,uint64_t version,uint32_t inod
 
 uint8_t fs_do_unarchive(uint32_t inode,uint64_t version) {
 	char fn[256];
-	sprintf(fn,ARCHIVE_NAME,inode,version);
+	sprintf(fn,ARCHIVE_NAME,archives_path,inode,version);
 	uint8_t r = fs_walk_archive_chunks(fn, chunk_unarchive);
 	if (r==STATUS_OK) {
 		unlink(fn);
