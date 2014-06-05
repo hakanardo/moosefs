@@ -31,6 +31,7 @@
 #include <inttypes.h>
 #include <errno.h>
 #include <dirent.h>
+#include <time.h>
 
 
 #include "MFSCommunication.h"
@@ -3093,6 +3094,45 @@ void fs_set_archives_path(char *path) {
 	archives_path = strdup(path);
 }
 
+static const char *archive_signature = "MFS ARCHIVE 1.0";
+
+static int fsnodes_dump_header(fsnode *node, FILE *fd) {
+	uint8_t hdr[65535];
+	uint8_t *ptr = hdr;
+	memcpy(ptr, archive_signature, strlen(archive_signature));
+	ptr += strlen(archive_signature);
+	uint32_t size = fsnodes_getpath_size(node->parents);
+	put32bit(&ptr, size);
+	fsnodes_getpath_data(node->parents, ptr, size);
+	ptr += size;
+	put64bit(&ptr, time(NULL));
+	if (fwrite(hdr, ptr-hdr, 1, fd) != 1) {
+		syslog(LOG_NOTICE,"fwrite error");
+		return ERROR_IO;
+	}
+	return STATUS_OK;
+}
+
+static int fsnodes_skipp_header(FILE *fd) {
+	uint8_t buf[255];
+	if (fread(buf, strlen(archive_signature), 1, fd) != 1) {
+		syslog(LOG_NOTICE,"fread error");		
+		return ERROR_IO;
+	}
+	if (memcmp(buf, archive_signature, strlen(archive_signature))) {
+		syslog(LOG_NOTICE,"bad signature in archive file");				
+		return ERROR_EINVAL;
+	}
+	if (fread(buf, 4, 1, fd) != 1) {
+		syslog(LOG_NOTICE,"fread error");				
+		return ERROR_IO;
+	}
+	const uint8_t *ptr = buf;
+	uint32_t size = get32bit(&ptr);
+	fseek(fd, size + 8, SEEK_CUR);
+	return STATUS_OK;
+}
+
 static int fsnodes_dump(fsnode *node) {
 	struct stat st;
 	char buf[255];
@@ -3112,6 +3152,7 @@ static int fsnodes_dump(fsnode *node) {
 	if (!fd) {
 		return ERROR_IO;
 	}
+	fsnodes_dump_header(node, fd);
 	fsnodes_dump_node(node,fd);
 	fs_storenode(NULL,fd,0);
 	fsnodes_dump_edge(node,fd);
@@ -4934,6 +4975,10 @@ uint8_t fs_do_restore(uint32_t ts,uint32_t inode,uint64_t version,fsnode *parent
 	fseek(fd,0,SEEK_END);
 	inodes = ftell(fd)/48+10; // guess
 	fseek(fd,0,SEEK_SET);
+	int ret = fsnodes_skipp_header(fd);
+	if (ret != STATUS_OK) {
+		return ret;
+	}
 	if (fs_loadnode(fd,&oldid,&newid)<0) {
 		fclose(fd);
 		return ERROR_IO;
@@ -5058,6 +5103,10 @@ uint8_t fs_walk_archive_chunks(char *archive_name, int (*opperation)(uint64_t)) 
 	if (!fd) {
 		return ERROR_ENOENT;
 	}
+	int ret = fsnodes_skipp_header(fd);
+	if (ret != STATUS_OK) {
+		return ret;
+	}	
 	while (1) {
 		int type = fgetc(fd);
 		if (type==EOF) {
