@@ -8816,6 +8816,61 @@ int fs_loadarchives() {
 	return 0;
 }
 
+int32_t fs_listarchives(char *data, uint32_t datalen) {
+	DIR *dp;
+	struct dirent *ep;   
+	char buf[255];
+	int l;
+
+	dp = opendir("archives");
+	if (!dp) {
+		return -1;
+	}
+
+	l = snprintf(data, datalen, "\nArchive ID      | Created          | Path\n"
+	                   		    "----------------------------------------------------\n");
+	datalen -= l;
+	data += l;
+
+	while ((ep = readdir(dp))) {
+		if (ep->d_type != DT_DIR) {
+			sprintf(buf,"archives/%s", ep->d_name);
+			FILE *fd = fopen(buf, "r");
+			if (fd == NULL) {
+				return -1;
+			}
+			if (fread(buf, strlen(archive_signature), 1, fd) != 1) {
+				syslog(LOG_NOTICE,"fread error");		
+				return -1;
+			}
+			if (fread(buf, 4, 1, fd) != 1) {
+				syslog(LOG_NOTICE,"fread error");				
+				return -1;
+			}
+			const uint8_t *ptr = (uint8_t *) buf;
+			uint32_t size = get32bit(&ptr);
+			if (fread(buf, size + 8, 1, fd) != 1) {
+				syslog(LOG_NOTICE,"fread error");				
+				return -1;
+			}
+			ptr = (uint8_t *) buf + size;
+			time_t t = get64bit(&ptr);
+			buf[size] = '\0';
+			struct tm tm;
+			localtime_r(&t,&tm);
+			l = snprintf(data, datalen-1, "%15s | %d-%.2d-%.2d %.2d:%.2d | /%s\n", ep->d_name, 
+			             tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday, tm.tm_hour, tm.tm_min, 
+			             buf);
+			datalen -= l;
+			if (datalen <= 0) {
+				return -1;
+			}
+			data += l;
+		}
+    }
+    closedir(dp);
+	return 0;
+}
 
 int fs_load(FILE *fd,int ignoreflag,uint8_t fver) {
 	uint8_t hdr[16];

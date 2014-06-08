@@ -108,6 +108,7 @@ uint8_t fs_snapshot(uint32_t rootinode,uint8_t sesflags,uint32_t inode_src,uint3
 uint8_t fs_archive(uint32_t rootinode,uint8_t sesflags,uint32_t inode,uint32_t uid,uint32_t gid,uint64_t *snapshot_version);
 uint8_t fs_restore(uint32_t rootinode,uint8_t sesflags,uint32_t inode,uint64_t version,uint32_t parent_dst,uint16_t nleng_dst,const uint8_t *name_dst,uint32_t uid,uint32_t gid);
 uint8_t fs_unarchive(uint32_t rootinode,uint8_t sesflags,uint32_t inode,uint64_t version,uint32_t uid,uint32_t gid);
+int32_t fs_listarchives(char *buf, uint32_t buflen);
 uint8_t fs_append(uint32_t rootinode,uint8_t sesflags,uint32_t inode,uint32_t inode_src,uint32_t uid,uint32_t gid);
 
 uint8_t fs_readdir_size(uint32_t rootinode,uint8_t sesflags,uint32_t inode,uint32_t uid,uint32_t gid,uint8_t flags,void **dnode,uint32_t *dbuffsize);

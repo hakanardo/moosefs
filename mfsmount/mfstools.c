@@ -2492,6 +2492,60 @@ int restore(const char *src,const char*dstname) {
 	return make_restore(inode,version,to,base);
 }
 
+int list_archives(const char *mount_point) {
+	uint8_t reqbuff[50],*wptr;
+	const uint8_t *rptr;
+	uint32_t cmd,leng;
+	uint32_t mount_inode;
+
+	int fd = open_master_conn(mount_point,&mount_inode,NULL,0,0);
+	if (fd<0) {
+		return -1;
+	}
+	wptr = reqbuff;
+
+	put32bit(&wptr,CLTOMA_FUSE_LISTARCHIVES);
+	put32bit(&wptr,4);
+	put32bit(&wptr,0);
+	if (tcpwrite(fd,reqbuff,12)!=(int32_t)(12)) {
+		printf("master query: send error\n");
+		goto FAIL;
+	}
+
+	if (tcpread(fd,reqbuff,12)!=12) {
+		printf("master query: receive error\n");
+		goto FAIL;
+	}
+	rptr = reqbuff;
+	cmd = get32bit(&rptr);
+	leng = get32bit(&rptr) - 4;
+	if (cmd!=MATOCL_FUSE_LISTARCHIVES) {
+		printf("master query: wrong answer (type)\n");
+		goto FAIL;
+	}
+	cmd = get32bit(&rptr);	// queryid
+	if (cmd!=0) {
+		printf("master query: wrong answer (queryid: %u)\n",cmd);
+		goto FAIL;
+	}
+
+	char *buf = alloca(leng);
+	while (leng > 0) {
+		int l = tcpread(fd, buf, leng);
+		if (l<=0) {
+			printf("master query: receive error: %d\n", l);
+			goto FAIL;			
+		}
+		fwrite(buf, l, 1, stdout);
+		leng -= l;
+	}
+
+	return 0;
+FAIL:	
+	close_master_conn(1);
+	return -1;
+}
+
 int unarchive(const char *src, const char *mount_point) {
 	uint8_t reqbuff[50],*wptr,status;
 	const uint8_t *rptr;
@@ -2567,6 +2621,7 @@ enum {
 	MFSARCHIVE,
 	MFSRESTORE,
 	MFSUNARCHIVE,
+	MFSLISTARCHIVES,
 	MFSGETEATTR,
 	MFSSETEATTR,
 	MFSDELEATTR,
@@ -2655,6 +2710,9 @@ void usage(int f) {
 		case MFSUNARCHIVE:
 			fprintf(stderr,"rollback archived chunks\n\nusage: mfsunarchive src mountpoint\n");
 			break;
+		case MFSLISTARCHIVES:
+			fprintf(stderr,"list all acrhives stored on the master server\n\nusage: mfslistarchives mountpoint\n");
+			break;
 		case MFSGETEATTR:
 			fprintf(stderr,"get objects extra attributes\n\nusage: mfsgeteattr [-nhHr] name [name ...]\n");
 			print_numberformat_options();
@@ -2736,6 +2794,8 @@ int main(int argc,char **argv) {
 			SYMLINK("mfsfilerepair")
 			SYMLINK("mfsmakesnapshot")
 			SYMLINK("mfsarchive")
+			SYMLINK("mfsunarchive")
+			SYMLINK("mfslistarchives")
 			SYMLINK("mfsrestore")
 			SYMLINK("mfsgeteattr")
 			SYMLINK("mfsseteattr")
@@ -2757,6 +2817,7 @@ int main(int argc,char **argv) {
 			fprintf(stderr,"\tmfsgetgoal\n\tmfssetgoal\n\tmfsgettrashtime\n\tmfssettrashtime\n");
 			fprintf(stderr,"\tmfscheckfile\n\tmfsfileinfo\n\tmfsappendchunks\n\tmfsdirinfo\n\tmfsfilerepair\n");
 			fprintf(stderr,"\tmfsmakesnapshot\n\tmfsarchive\n\tmfsrestore\n");
+			fprintf(stderr,"\tmfsunarchive\n\tmfslistarchives\n");
 			fprintf(stderr,"\tmfsgeteattr\n\tmfsseteattr\n\tmfsdeleattr\n");
 #if VERSHEX>=0x010700
 			fprintf(stderr,"\tmfsgetquota\n\tmfssetquota\n\tmfsdelquota\n");
@@ -2822,6 +2883,8 @@ int main(int argc,char **argv) {
 		f=MFSRESTORE;
 	} else if (CHECKNAME("mfsunarchive")) {
 		f=MFSUNARCHIVE;
+	} else if (CHECKNAME("mfslistarchives")) {
+		f=MFSLISTARCHIVES;
 	} else {
 		fprintf(stderr,"unknown binary name\n");
 		return 1;
@@ -2890,6 +2953,12 @@ int main(int argc,char **argv) {
 	case MFSUNARCHIVE:
 		if (argc==3) {
 			return unarchive(argv[1],argv[2]);
+		} else {
+			usage(f);
+		}
+	case MFSLISTARCHIVES:
+		if (argc==2) {
+			return list_archives(argv[1]);
 		} else {
 			usage(f);
 		}

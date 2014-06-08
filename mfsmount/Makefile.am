@@ -51,14 +51,16 @@ mfstools_links=\
 	mfsrsetgoal mfsrsettrashtime mfssetgoal mfssettrashtime \
 	mfsgeteattr mfsseteattr mfsdeleattr \
 	mfsgetquota mfssetquota mfsdelquota \
-	mfsmakesnapshot mfsappendchunks mfsarchive mfsrestore mfsunarchive
+	mfsmakesnapshot mfsappendchunks mfsarchive mfsrestore mfsunarchive \
+	mfslistarchives
 else
 mfstools_links=\
 	mfscheckfile mfsdirinfo mfsfileinfo mfsfilerepair \
 	mfsgetgoal mfsgettrashtime mfsrgetgoal mfsrgettrashtime \
 	mfsrsetgoal mfsrsettrashtime mfssetgoal mfssettrashtime \
 	mfsgeteattr mfsseteattr mfsdeleattr \
-	mfsmakesnapshot mfsappendchunks mfsarchive mfsrestore mfsunarchive
+	mfsmakesnapshot mfsappendchunks mfsarchive mfsrestore mfsunarchive \
+	mfslistarchives
 endif
 
 install-exec-hook:

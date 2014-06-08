@@ -1135,6 +1135,14 @@
 #define MATOCL_FUSE_UNARCHIVE (PROTO_BASE+487)
 // msgid:32 status:8
 
+// 0x01E7
+#define CLTOMA_FUSE_LISTARCHIVES (PROTO_BASE+488)
+// msgid:32
+
+// 0x01E8
+#define MATOCL_FUSE_LISTARCHIVES (PROTO_BASE+489)
+// msgid:32 list
+
 
 
 

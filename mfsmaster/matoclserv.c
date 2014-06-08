@@ -3194,6 +3194,25 @@ void matoclserv_fuse_unarchive(matoclserventry *eptr,const uint8_t *data,uint32_
 	put8bit(&ptr,status);
 }
 
+void matoclserv_fuse_listarchives(matoclserventry *eptr,const uint8_t *data,uint32_t length) {
+	uint32_t msgid;
+	if (length!=4) {
+		syslog(LOG_NOTICE,"CLTOMA_FUSE_LISTARCHIVES - wrong size (%"PRIu32"/4)",length);
+		eptr->mode = KILL;
+		return;
+	}	
+	msgid = get32bit(&data);
+	uint8_t *ptr;
+	char buf[65536];
+	if (fs_listarchives(buf, sizeof(buf)) < 0) {
+		sprintf(buf, "FAILED!");
+	}
+	int l = strlen(buf);
+	ptr = matoclserv_createpacket(eptr,MATOCL_FUSE_LISTARCHIVES,4+l);
+	put32bit(&ptr,msgid);
+	memcpy(ptr, buf, l);
+}
+
 /*
 void matoclserv_fuse_eattr(matoclserventry *eptr,const uint8_t *data,uint32_t length) {
 	uint8_t mode,eattr,fneattr;
@@ -3727,6 +3746,9 @@ void matoclserv_gotpacket(matoclserventry *eptr,uint32_t type,const uint8_t *dat
 			case CLTOMA_FUSE_UNARCHIVE:
 				matoclserv_fuse_unarchive(eptr,data,length);
 				break;
+			case CLTOMA_FUSE_LISTARCHIVES:
+				matoclserv_fuse_listarchives(eptr,data,length);
+				break;
 /* for tools - also should be available for registered clients */
 			case CLTOMA_CSERV_LIST:
 				matoclserv_cserv_list(eptr,data,length);
@@ -3830,6 +3852,9 @@ void matoclserv_gotpacket(matoclserventry *eptr,uint32_t type,const uint8_t *dat
 				break;
 			case CLTOMA_FUSE_UNARCHIVE:
 				matoclserv_fuse_unarchive(eptr,data,length);
+				break;
+			case CLTOMA_FUSE_LISTARCHIVES:
+				matoclserv_fuse_listarchives(eptr,data,length);
 				break;
 /* for tools - also should be available for registered clients */
 			case CLTOMA_CSERV_LIST:
