@@ -22,6 +22,7 @@ usr/bin/mfssnapshot
 usr/bin/mfsarchive 
 usr/bin/mfsrestore 
 usr/bin/mfsunarchive
+usr/bin/mfslistarchives
 usr/share/man/man1/mfsappendchunks.1
 usr/share/man/man1/mfscheckfile.1
 usr/share/man/man1/mfsdeleattr.1
