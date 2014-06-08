@@ -2276,11 +2276,13 @@ int make_archive(const char *src,const char *dst) {
 	uint8_t reqbuff[50],*wptr,*buff=NULL,status;
 	const uint8_t *rptr;
 	uint32_t inode,cmd,leng,uid,gid;
-	FILE *f;
+	FILE *f=NULL;
 	int fd;
-	if (!(f=fopen(dst,"w"))) {
-		fprintf(stderr, "can not open %s for write: %s\n",dst,strerr(errno));
-		return -1;
+	if (dst) {
+		if (!(f=fopen(dst,"w"))) {
+			fprintf(stderr, "can not open %s for write: %s\n",dst,strerr(errno));
+			return -1;
+		}
 	}
 	fd = open_master_conn(src,&inode,NULL,0,0);
 	if (fd<0) {
@@ -2296,12 +2298,12 @@ int make_archive(const char *src,const char *dst) {
 	put32bit(&wptr,uid);
 	put32bit(&wptr,gid);
 	if (tcpwrite(fd,reqbuff,28)!=(int32_t)(28)) {
-		printf("%s->%s: master query: send error\n",src,dst);
+		printf("%s: master query: send error\n",src);
 		close_master_conn(1);
 		return -1;
 	}
 	if (tcpread(fd,reqbuff,8)!=8) {
-		printf("%s->%s: master query: receive error\n",src,dst);
+		printf("%s: master query: receive error\n",src);
 		close_master_conn(1);
 		return -1;
 	}
@@ -2309,13 +2311,13 @@ int make_archive(const char *src,const char *dst) {
 	cmd = get32bit(&rptr);
 	leng = get32bit(&rptr);
 	if (cmd!=MATOCL_FUSE_ARCHIVE) {
-		printf("%s->%s: master query: wrong answer (type)\n",src,dst);
+		printf("%s: master query: wrong answer (type)\n",src);
 		close_master_conn(1);
 		return -1;
 	}
 	buff = malloc(leng);
 	if (tcpread(fd,buff,leng)!=(int32_t)leng) {
-		printf("%s->%s: master query: receive error\n",src,dst);
+		printf("%s: master query: receive error\n",src);
 		goto FAIL;
 	}
 	rptr = buff;
@@ -2328,7 +2330,7 @@ int make_archive(const char *src,const char *dst) {
 	if (leng==1) {
 		status = get8bit(&rptr);
 		if (status!=0) {
-			printf("%s->%s: archive failed: %s\n",src,dst,mfsstrerr(status));
+			printf("%s: archive failed: %s\n",src,mfsstrerr(status));
 			goto FAIL;
 		}
 	}
@@ -2337,14 +2339,18 @@ int make_archive(const char *src,const char *dst) {
 		goto FAIL;
 	}
 	uint64_t uuid = get64bit(&rptr);
-	size_t n = sprintf((char*)reqbuff,"%"PRIu32" %"PRIu64"\n",inode,uuid);
-	printf("%s\n",reqbuff);
-	if (fwrite(reqbuff,1,n,f)!=n) {
-		printf("write failed: %s\n",strerr(errno));
-		goto FAIL;
+	size_t n = sprintf((char*)reqbuff,"i%"PRIu32"_v%"PRIu64"\n",inode,uuid);
+	printf("%s",reqbuff);
+	if (f) {
+		if (fwrite(reqbuff,1,n,f)!=n) {
+			printf("write failed: %s\n",strerr(errno));
+			goto FAIL;
+		}
 	}
 	free(buff);
-	fclose(f);
+	if (f) {
+		fclose(f);
+	}
 	close_master_conn(0);
 	return 0;
 FAIL:
@@ -2365,19 +2371,21 @@ int archive(const char*srcname,const char *dstname,int canoverwrite) {
 		printf("%s: lstat error: %s\n",srcname,strerr(errno));
 		return -1;
 	}
-	if (stat(dstname,&dst)==0) {	// dst exist
-		if (!S_ISDIR(dst.st_mode)) {	// dst id not a directory
-			if (!canoverwrite) {
-				printf("file %s already exists\n",dstname);
-				return -1;
+	if (dstname) {
+		if (stat(dstname,&dst)==0) {	// dst exist
+			if (!S_ISDIR(dst.st_mode)) {	// dst id not a directory
+				if (!canoverwrite) {
+					printf("file %s already exists\n",dstname);
+					return -1;
+				}
+			} else {	// dst is a directory
+				if (bsd_basename(srcname,base)<0) {
+					printf("%s: basename error\n",srcname);
+					return -1;
+				}
+				snprintf(to,PATH_MAX,"%s/%s",dstname,base);
+				dstname = to;
 			}
-		} else {	// dst is a directory
-			if (bsd_basename(srcname,base)<0) {
-				printf("%s: basename error\n",srcname);
-				return -1;
-			}
-			snprintf(to,PATH_MAX,"%s/%s",dstname,base);
-			dstname = to;
 		}
 	}
 	return make_archive(srcname,dstname);
@@ -2436,26 +2444,33 @@ FAIL:
 	return -1;
 }
 
-int restore(const char *src,const char*dstname) {
+int restore(const char *src,const char*dstname,int iflag) {
 	char to[PATH_MAX+1],base[PATH_MAX+1],dir[PATH_MAX+1];
-	struct stat sst,dst;
+	struct stat dst;
 	uint32_t inode;
 	uint64_t version;
-	FILE *f = fopen(src,"r");
-	if (!f) {
-		fprintf(stderr,"open %s failed: %s\n",src,strerr(errno));
-		return -1;
-	}
-	if (fscanf(f,"%"PRIu32" %"PRIu64,&inode,&version)<2) {
-		fprintf(stderr,"read failed:%s\n",strerr(errno));
+	if (!iflag) {
+		FILE *f = fopen(src,"r");
+		struct stat sst;
+		if (!f) {
+			fprintf(stderr,"open %s failed: %s\n",src,strerr(errno));
+			return -1;
+		}
+		if (fscanf(f,"i%"PRIu32"_v%"PRIu64,&inode,&version)<2) {
+			fprintf(stderr,"read failed:%s\n",strerr(errno));
+			fclose(f);
+			return -1;
+		}
 		fclose(f);
-		return -1;
-	}
-	fclose(f);
-
-	if (lstat(src,&sst)<0) {
-		printf("%s: lstat error: %s\n",src,strerr(errno));
-		return -1;
+		if (lstat(src,&sst)<0) {
+			printf("%s: lstat error: %s\n",src,strerr(errno));
+			return -1;
+		}
+	} else {
+		if (sscanf(src,"i%"PRIu32"_v%"PRIu64,&inode,&version)<2) {
+			fprintf(stderr,"read failed:%s\n",strerr(errno));
+			return -1;
+		}
 	}
 	if (stat(dstname,&dst)==0) {	// dst exist
 		if (!S_ISDIR(dst.st_mode)) {	// dst id not a directory
@@ -2546,21 +2561,30 @@ FAIL:
 	return -1;
 }
 
-int unarchive(const char *src, const char *mount_point) {
+int unarchive(const char *src, const char *mount_point, int iflag) {
 	uint8_t reqbuff[50],*wptr,status;
 	const uint8_t *rptr;
 	uint32_t inode,cmd,leng,uid,gid;
 	uint64_t version;
-	FILE *f = fopen(src,"r");
-	if (!f) {
-		fprintf(stderr,"can not open %s: %s\n",src,strerr(errno));
-		return -1;
+
+	if (!iflag) {
+		FILE *f = fopen(src,"r");
+		if (!f) {
+			fprintf(stderr,"can not open %s: %s\n",src,strerr(errno));
+			return -1;
+		}
+		if (fscanf(f,"i%"PRIu32"_v%"PRIu64,&inode,&version)<2) {
+			fprintf(stderr,"read fail: %s\n",strerr(errno));
+			return -1;
+		}
+		fclose(f);
+	} else {
+		if (sscanf(src,"i%"PRIu32"_v%"PRIu64,&inode,&version)<2) {
+			fprintf(stderr,"read failed:%s\n",strerr(errno));
+			return -1;
+		}
 	}
-	if (fscanf(f,"%"PRIu32" %"PRIu64,&inode,&version)<2) {
-		fprintf(stderr,"read fail: %s\n",strerr(errno));
-		return -1;
-	}
-	fclose(f);
+
 	uint32_t mount_inode;
 	int fd = open_master_conn(mount_point,&mount_inode,NULL,0,0);
 	if (fd<0) {
@@ -2701,14 +2725,16 @@ void usage(int f) {
 			fprintf(stderr,"-o - allow to overwrite existing objects\n");
 			break;
 		case MFSARCHIVE:
-			fprintf(stderr,"make offline snapshot (lazy copy)\n\nusage: mfsarchive [-o] src dst\n");
+			fprintf(stderr,"make offline snapshot (lazy copy)\n\nusage: mfsarchive [-o] src [dst]\n");
 			fprintf(stderr,"-o - allow to overwrite existing file\n");
 			break;
 		case MFSRESTORE:
-			fprintf(stderr,"load offline snapshot (lazy copy)\n\nusage: mfsrestore src dst\n");
+			fprintf(stderr,"load offline snapshot (lazy copy)\n\nusage: mfsrestore [-i] src dst\n");
+			fprintf(stderr,"-i - interprete src as and archive id instead of a filename\n");
 			break;
 		case MFSUNARCHIVE:
-			fprintf(stderr,"rollback archived chunks\n\nusage: mfsunarchive src mountpoint\n");
+			fprintf(stderr,"rollback archived chunks\n\nusage: mfsunarchive [-i] src mountpoint\n");
+			fprintf(stderr,"-i - interprete src as and archive id instead of a filename\n");
 			break;
 		case MFSLISTARCHIVES:
 			fprintf(stderr,"list all acrhives stored on the master server\n\nusage: mfslistarchives mountpoint\n");
@@ -2764,6 +2790,7 @@ int main(int argc,char **argv) {
 	int ch;
 	int oflag=0;
 	int rflag=0;
+	int iflag=0;
 	uint64_t v;
 	uint8_t eattr=0,goal=1,smode=SMODE_SET;
 	uint32_t trashtime=86400;
@@ -2939,20 +2966,41 @@ int main(int argc,char **argv) {
 		}
 		argc -= optind;
 		argv += optind;
-		if (argc==2) {
+		if (argc==1) {
+			return archive(argv[0],NULL,oflag);
+		} else if (argc==2) {
 			return archive(argv[0],argv[1],oflag);
 		} else {
 			usage(f);
 		}
 	case MFSRESTORE:
-		if (argc==3) {
-			return restore(argv[1],argv[2]);
+		while ((ch=getopt(argc,argv,"i"))!=-1) {
+			switch(ch) {
+			case 'i':
+				iflag=1;
+				break;
+			}
+		}
+		argc -= optind;
+		argv += optind;			
+
+		if (argc==2) {
+			return restore(argv[0],argv[1],iflag);
 		} else {
 			usage(f);
 		}
 	case MFSUNARCHIVE:
-		if (argc==3) {
-			return unarchive(argv[1],argv[2]);
+		while ((ch=getopt(argc,argv,"i"))!=-1) {
+			switch(ch) {
+			case 'i':
+				iflag=1;
+				break;
+			}
+		}
+		argc -= optind;
+		argv += optind;	
+		if (argc==2) {
+			return unarchive(argv[0],argv[1],iflag);
 		} else {
 			usage(f);
 		}
